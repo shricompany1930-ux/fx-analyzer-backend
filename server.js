@@ -37,6 +37,28 @@ function mapSymbol(pair) {
 }
 
 /* =========================
+   TELEGRAM FUNCTION
+========================= */
+
+async function sendTelegram(message) {
+  const token = process.env.TG_TOKEN;
+  const chatId = process.env.TG_CHAT_ID;
+
+  if (!token || !chatId) return;
+
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+
+  await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: message
+    })
+  });
+}
+
+/* =========================
    ANALYZE ROUTE
 ========================= */
 
@@ -44,13 +66,13 @@ app.post("/analyze", async (req, res) => {
   try {
     const { pair, timeframe } = req.body;
 
-    // API key check
+    // --- API KEY CHECK ---
     const API_KEY = process.env.TWELVE_DATA_API_KEY;
     if (!API_KEY) {
       return res.json({ status: "ERROR", reason: "API key missing" });
     }
 
-    // Build API request
+    // --- FETCH DATA ---
     const symbol = mapSymbol(pair);
     const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${timeframe}&outputsize=100&apikey=${API_KEY}`;
 
@@ -60,19 +82,17 @@ app.post("/analyze", async (req, res) => {
     if (!data.values) {
       return res.json({
         status: "ERROR",
-        reason: data.message || "No candle data returned"
+        reason: data.message || "No candle data"
       });
     }
 
-    // Prepare candles
     const candles = data.values.reverse();
     const closes = candles.map(c => Number(c.close));
 
-    // Indicators
+    // --- INDICATORS ---
     const ema20 = EMA(closes, 20).at(-1);
     const ema50 = EMA(closes, 50).at(-1);
     const rsi = RSI(closes);
-
     const last = candles.at(-1);
 
     /* =========================
@@ -84,27 +104,33 @@ app.post("/analyze", async (req, res) => {
 
     if (Math.abs(ema20 - ema50) < 0.00001) {
       status = "NO TRADE";
-    } 
+    }
     else if (ema20 > ema50 && rsi >= 40 && rsi <= 55 && last.close > last.open) {
       status = "VALID";
       bias = "BUY";
-    } 
+    }
     else if (ema20 < ema50 && rsi >= 45 && rsi <= 60 && last.close < last.open) {
       status = "VALID";
       bias = "SELL";
     }
 
     /* =========================
-       ENTRY / SL / TP LOGIC
+       ENTRY / SL / TP
     ========================= */
 
     let entry = null;
     let sl = null;
     let tp = null;
 
+    // Expiry (1 candle)
+    const expiryMinutes =
+      timeframe === "5min" ? 5 :
+      timeframe === "15min" ? 15 : 60;
+
+    let expiryTime = null;
+
     if (status === "VALID") {
       entry = Number(last.close);
-
       const rr = timeframe === "5min" ? 1.2 : 1.5;
 
       if (bias === "BUY") {
@@ -118,10 +144,31 @@ app.post("/analyze", async (req, res) => {
         const risk = sl - entry;
         tp = entry - risk * rr;
       }
+
+      expiryTime = new Date(Date.now() + expiryMinutes * 60000).toISOString();
     }
 
     /* =========================
-       FINAL RESPONSE
+       TELEGRAM ALERT (ONLY VALID)
+    ========================= */
+
+    if (status === "VALID") {
+      const msg = `
+📊 ${pair} | ${timeframe}
+${bias === "BUY" ? "🟢 BUY" : "🔴 SELL"}
+
+Entry: ${entry}
+SL: ${sl}
+TP: ${tp}
+
+⏳ Valid for ${expiryMinutes} minutes
+RSI: ${rsi.toFixed(2)}
+`;
+      await sendTelegram(msg);
+    }
+
+    /* =========================
+       RESPONSE
     ========================= */
 
     return res.json({
@@ -130,6 +177,7 @@ app.post("/analyze", async (req, res) => {
       entry,
       sl,
       tp,
+      expiryTime,
       ema20,
       ema50,
       rsi,
