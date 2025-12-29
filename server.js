@@ -61,6 +61,28 @@ app.post("/analyze", async (req, res) => {
     const rsi = RSI(closes);
 
     const last = candles.at(-1);
+    let entry = null;
+let sl = null;
+let tp = null;
+
+if (status === "VALID") {
+  entry = Number(last.close);
+
+  if (bias === "BUY") {
+    sl = Number(last.low);
+    const risk = entry - sl;
+    const rr = timeframe === "5min" ? 1.2 : 1.5;
+    tp = entry + risk * rr;
+  }
+
+  if (bias === "SELL") {
+    sl = Number(last.high);
+    const risk = sl - entry;
+    const rr = timeframe === "5min" ? 1.2 : 1.5;
+    tp = entry - risk * rr;
+  }
+}
+
 
     let status = "WAIT";
     let bias = "NONE";
@@ -78,13 +100,16 @@ app.post("/analyze", async (req, res) => {
     }
 
     return res.json({
-      status,
-      bias,
-      ema20,
-      ema50,
-      rsi,
-      candleTime: last.datetime
-    });
+  status,
+  bias,
+  entry,
+  sl,
+  tp,
+  ema20,
+  ema50,
+  rsi,
+  candleTime: last.datetime
+});
 
   } catch (err) {
     console.error("Analyze error:", err);
