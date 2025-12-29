@@ -6,7 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const API_KEY = "YOUR_TWELVEDATA_API_KEY";
+const API_KEY = process.env.TWELVE_DATA_API_KEY;
 
 function EMA(values, period) {
   const k = 2 / (period + 1);
