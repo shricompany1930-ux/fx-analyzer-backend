@@ -25,6 +25,8 @@ function RSI(values, period = 14) {
 
 function mapSymbol(pair) {
   if (pair === "XAUUSD") return "XAU/USD";
+  if (pair === "EURUSD") return "EUR/USD";
+  if (pair === "GBPUSD") return "GBP/USD";
   return pair;
 }
 
